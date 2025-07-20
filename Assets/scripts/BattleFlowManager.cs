@@ -1,155 +1,146 @@
 using UnityEngine;
 using UnityEngine.UI;
+using c1a_proy.rpg.rpg.Assets.scripts;
 
 public class BattleFlowManager : MonoBehaviour
 {
-    public Slider[] playerTimerBars;
-    public Slider enemyTimerBar;
-    public float[] playerFillTimes;
-    public float enemyFillTime = 5f;
+    // Inspector-driven: asigna los combatientes y sus barras en el inspector
     public Button fightButton;
     public Button runButton;
-    public string[] fightMessages;
-    public string[] runMessages;
+    public int activeCombatantIndex = 0;
+    public int activeRoomIndex = 0;
+    public float resetDelay = 0f;
+    public bool timersActive = true;
 
-    private float[] playerElapsed;
-    private float enemyElapsed = 0f;
-    private float resetDelay = 0f;
-    private bool playerCanAct = false;
-    private bool timersActive = true;
-    private int activeCameraIndex = 0;
+    [System.Serializable]
+    public struct CombatantSlot
+    {
+        public int roomIndex;
+        public bool isEnemy;
+        public MonoBehaviour combatant;
+        public Slider timerBar;
+        public ICharacter Character => combatant as ICharacter;
+    }
+
+    [Header("Combatant Slots")]
+    public CombatantSlot[] combatantSlots;
 
     void Start()
     {
-        playerElapsed = new float[playerTimerBars.Length];
-        fightButton.interactable = false;
-        runButton.interactable = false;
-        ResetPlayerTimer();
-        ResetEnemyTimer();
-        UpdatePlayerSliderVisibility();
+    activeRoomIndex = 0; // Ensure room 1 is always the starting room
+    fightButton.interactable = false;
+    runButton.interactable = false;
+    ResetActiveCombatantTimer();
+    UpdateCombatantSliderVisibility();
     }
 
     void Update()
     {
         if (!timersActive) return;
-
-        // Update elapsed time for all players/cameras
-            if (playerTimerBars != null)
-                {
-                    int limit = Mathf.Min(playerTimerBars.Length, playerElapsed.Length);
-                    for (int i = 0; i < limit; i++)
-                    {
-                playerElapsed[i] += Time.deltaTime;
-                if (playerFillTimes[i] > 0)
-                {
-                    playerTimerBars[i].value = Mathf.Clamp01(playerElapsed[i] / playerFillTimes[i]);
-                }
-                else
-                {
-                    playerTimerBars[i].value = 0; // Default to 0 if fill time is invalid
-                }
-            }
-        }
-        enemyElapsed += Time.deltaTime;
-        if (enemyTimerBar != null)
-            enemyTimerBar.value = Mathf.Clamp01(enemyElapsed / enemyFillTime);
-
-        // Check if the active player's timer is full and enable/disable buttons accordingly
-        if (activeCameraIndex >= 0 && activeCameraIndex < playerElapsed.Length &&
-            activeCameraIndex < playerFillTimes.Length)
+        bool anyPlayerReady = false;
+        for (int i = 0; i < combatantSlots.Length; i++)
         {
-            if (playerElapsed[activeCameraIndex] >= playerFillTimes[activeCameraIndex])
+            var slot = combatantSlots[i];
+            var character = slot.Character;
+            if (character != null)
             {
-                playerCanAct = true;
-                fightButton.interactable = true;
-                runButton.interactable = true;
-            }
-            else
-            {
-                playerCanAct = false;
-                fightButton.interactable = false;
-                runButton.interactable = false;
+                if (slot.timerBar != null && character.FillTime > 0)
+                {
+                    slot.timerBar.value = Mathf.Clamp01(character.ElapsedTime / character.FillTime);
+                }
+                // Only check player readiness for slots in the current room
+                if (!slot.isEnemy && slot.roomIndex == activeRoomIndex && character.ElapsedTime >= character.FillTime)
+                {
+                    anyPlayerReady = true;
+                }
+                // Enemy auto-attack and slider reset for each enemy independently
+                if (slot.isEnemy && character.ElapsedTime >= character.FillTime)
+                {
+                    character.ElapsedTime = 0f;
+                    if (slot.timerBar != null)
+                        slot.timerBar.value = 0f;
+                    Debug.Log($"Enemy in room {slot.roomIndex} attacks!");
+                }
             }
         }
-
-        if (enemyElapsed >= enemyFillTime)
-        {
-            EnemyActs();
-        }
+        // Only enable buttons for current room
+        fightButton.interactable = anyPlayerReady;
+        runButton.interactable = anyPlayerReady;
     }
 
     public void OnFightButtonPressed()
     {
-        if (playerCanAct)
+        // Find the player combatant for the current room
+        for (int i = 0; i < combatantSlots.Length; i++)
         {
-            string msg;
-            if (fightMessages != null && fightMessages.Length > activeCameraIndex)
-                msg = fightMessages[activeCameraIndex];
-            else
-                msg = $"FIGHT{activeCameraIndex + 1}";
-            Debug.Log(msg);
-            AfterPlayerAction();
+            var slot = combatantSlots[i];
+            var character = slot.Character;
+            if (character != null && !slot.isEnemy && slot.roomIndex == activeRoomIndex && character.ElapsedTime >= character.FillTime)
+            {
+                string msg = character.FightMessage ?? $"FIGHT{i + 1}";
+                Debug.Log(msg);
+                // Reset only this timer
+                character.ElapsedTime = 0f;
+                if (slot.timerBar != null)
+                    slot.timerBar.value = 0f;
+                AfterCombatantAction();
+                break;
+            }
         }
     }
 
     public void OnRunButtonPressed()
     {
-        if (playerCanAct)
+        // Find the player combatant for the current room
+        for (int i = 0; i < combatantSlots.Length; i++)
         {
-            string msg;
-            if (runMessages != null && runMessages.Length > activeCameraIndex)
-                msg = runMessages[activeCameraIndex];
-            else
-                msg = $"RUN{activeCameraIndex + 1}";
-            Debug.Log(msg);
-            AfterPlayerAction();
+            var slot = combatantSlots[i];
+            var character = slot.Character;
+            if (character != null && !slot.isEnemy && slot.roomIndex == activeRoomIndex && character.ElapsedTime >= character.FillTime)
+            {
+                string msg = character.RunMessage ?? $"RUN{i + 1}";
+                Debug.Log(msg);
+                // Reset only this timer
+                character.ElapsedTime = 0f;
+                if (slot.timerBar != null)
+                    slot.timerBar.value = 0f;
+                AfterCombatantAction();
+                break;
+            }
         }
     }
 
-    private void EnemyActs()
+    private void AfterCombatantAction()
     {
-        Debug.Log("ENEMY ATTACK");
-        AfterEnemyAction();
+    timersActive = false;
+    fightButton.interactable = false;
+    runButton.interactable = false;
+    Invoke(nameof(ResetActiveCombatantTimer), resetDelay);
     }
 
-    private void AfterPlayerAction()
+    private void ResetActiveCombatantTimer()
     {
-        timersActive = false;
-        fightButton.interactable = false;
-        runButton.interactable = false;
-        Invoke(nameof(ResetPlayerTimer), resetDelay); // Small delay before reset
-    }
-
-    private void AfterEnemyAction()
-    {
-        timersActive = false;
-        fightButton.interactable = false;
-        runButton.interactable = false;
-        Invoke(nameof(ResetEnemyTimer), resetDelay); // Small delay before reset
-    }
-
-    private void ResetPlayerTimer()
-    {
-        if (playerElapsed != null && activeCameraIndex >= 0 && activeCameraIndex < playerElapsed.Length)
+        // Only reset timer for player in current room
+        for (int i = 0; i < combatantSlots.Length; i++)
         {
-            playerElapsed[activeCameraIndex] = 0f;
-            if (playerTimerBars != null && playerTimerBars.Length > activeCameraIndex)
-                playerTimerBars[activeCameraIndex].value = 0f;
+            var slot = combatantSlots[i];
+            var character = slot.Character;
+            if (character != null && !slot.isEnemy && slot.roomIndex == activeRoomIndex)
+            {
+                character.ElapsedTime = 0f;
+                if (slot.timerBar != null)
+                    slot.timerBar.value = 0f;
+            }
         }
-        else
-        {
-            Debug.LogError("Invalid activeCameraIndex or uninitialized playerElapsed array.");
-        }
-        playerCanAct = false;
         timersActive = true;
-        UpdatePlayerSliderVisibility();
-
-        // Re-enable buttons if timer is ready again
-        if (playerElapsed[activeCameraIndex] >= playerFillTimes[activeCameraIndex])
+        // Only update visibility for current room
+        UpdateCombatantSliderVisibility();
+        var actSlot = combatantSlots[activeCombatantIndex];
+        var actCharacter = actSlot.Character;
+        if (actCharacter != null && !actSlot.isEnemy && actSlot.roomIndex == activeRoomIndex && actCharacter.ElapsedTime >= actCharacter.FillTime)
         {
             fightButton.interactable = true;
             runButton.interactable = true;
-            playerCanAct = true;
         }
         else
         {
@@ -158,34 +149,59 @@ public class BattleFlowManager : MonoBehaviour
         }
     }
 
-    private void ResetEnemyTimer()
+    public void SetActiveCombatantIndex(int index)
     {
-        enemyElapsed = 0f;
-        if (enemyTimerBar != null)
-            enemyTimerBar.value = 0f;
-        timersActive = true;
-    }
-
-    // Call this when switching cameras
-    public void SetActiveCameraIndex(int index)
-    {
-        if (playerTimerBars != null && playerTimerBars.Length > 0)
+        if (combatantSlots != null && combatantSlots.Length > 0)
         {
-            activeCameraIndex = Mathf.Clamp(index, 0, playerTimerBars.Length - 1);
-            UpdatePlayerSliderVisibility();
+            activeCombatantIndex = Mathf.Clamp(index, 0, combatantSlots.Length - 1);
+            UpdateCombatantSliderVisibility();
         }
         else
         {
-            Debug.LogError("playerTimerBars is null or empty. Cannot set active camera index.");
-            activeCameraIndex = 0; // Default to a safe value
+            Debug.LogError("combatantSlots is null or empty. Cannot set active combatant index.");
+            activeCombatantIndex = 0;
         }
     }
 
-    private void UpdatePlayerSliderVisibility()
+    public void SetActiveRoomIndex(int roomIndex)
     {
-        for (int i = 0; i < playerTimerBars.Length; i++)
+        activeRoomIndex = roomIndex;
+        UpdateCombatantSliderVisibility();
+    }
+
+    private void UpdateCombatantSliderVisibility()
+    {
+        for (int i = 0; i < combatantSlots.Length; i++)
         {
-            playerTimerBars[i].gameObject.SetActive(i == activeCameraIndex);
+            var slot = combatantSlots[i];
+            bool show = slot.roomIndex == activeRoomIndex;
+            if (slot.timerBar != null)
+                slot.timerBar.gameObject.SetActive(show);
         }
+    }
+
+    public void BeginBattle()
+    {
+        // Inicializa el flujo de batalla aquí
+    }
+
+    public ICharacter GetRandomPlayer()
+    {
+        // Example: return a random non-enemy character from combatantSlots
+        var players = new System.Collections.Generic.List<ICharacter>();
+        for (int i = 0; i < combatantSlots.Length; i++)
+        {
+            var c = combatantSlots[i].Character;
+            if (c != null && !combatantSlots[i].isEnemy)
+                players.Add(c);
+        }
+        if (players.Count == 0) return null;
+        return players[Random.Range(0, players.Count)];
+    }
+
+    public void EndEnemyTurn()
+    {
+        // Implement logic to handle end of enemy turn here
+        // For example, advance to next combatant or reset timers
     }
 }
