@@ -1,43 +1,27 @@
 using UnityEngine;
-
 using UnityEngine.InputSystem;
 using c1a_proy.rpg.rpg.Assets.scripts;
 
 public class CameraSwitcher : MonoBehaviour
 {
-    [Header("Cameras")]
+    [Header("Cámaras")]
     [SerializeField] public Camera[] cameras;
-    [Header("Turn Actions")]
-    [SerializeField] public TurnAction[] turnActions;
-    [Header("Input Actions")]
-    [SerializeField] public InputActionAsset inputActions;
-
-    // ...existing code...
-
-    [Header("Battle Flow Manager")]
+    [Header("Gestor de flujo de batalla")]
     public BattleFlowManager battleFlowManager;
-
     private InputAction[] camActions;
     private int currentIndex = 0;
-
+    [Header("Acciones de entrada")]
+    [SerializeField] public InputActionAsset inputActions;
 
     private void Start()
     {
-        // Detect which camera is enabled at start and show the correct slider
-        int activeIndex = -1;
+        // Force only camera 0 enabled at start, others disabled
         for (int i = 0; i < cameras.Length; i++)
         {
-            if (cameras[i].enabled)
-            {
-                activeIndex = i;
-                break;
-            }
+            cameras[i].enabled = (i == 0);
         }
-        for (int i = 0; i < turnActions.Length; i++)
-        {
-            turnActions[i].SetTimerVisibility(i == activeIndex);
-        }
-    // ...existing code...
+        if (battleFlowManager != null)
+            battleFlowManager.SetActiveRoomIndex(0);
     }
 
     private void OnEnable()
@@ -48,7 +32,7 @@ public class CameraSwitcher : MonoBehaviour
         {
             string actionName = $"ActivateCam{i + 1}";
             camActions[i] = cameraMap.FindAction(actionName);
-            int idx = i; // local copy for closure
+            int idx = i;
             camActions[i].performed += ctx => ShowCamera(idx);
             camActions[i].Enable();
         }
@@ -69,9 +53,8 @@ public class CameraSwitcher : MonoBehaviour
         for (int i = 0; i < cameras.Length; i++)
         {
             cameras[i].enabled = (i == index);
-            turnActions[i].SetTimerVisibility(i == index);
         }
         if (battleFlowManager != null)
-            battleFlowManager.SetActiveCameraIndex(index);
+            battleFlowManager.SetActiveRoomIndex(index);
     }
 }
